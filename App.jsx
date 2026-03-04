@@ -8,6 +8,9 @@ const BOT_ID = "00000000-0000-0000-0000-000000000001";
 const PAIRS = ["BTCUSDC", "ETHUSDC", "SOLUSDC", "BNBUSDC"];
 const PAIR_LABELS = { BTCUSDC: "BTC", ETHUSDC: "ETH", SOLUSDC: "SOL", BNBUSDC: "BNB" };
 
+// src/App.jsx — QUANTEX v3.1 Dashboard
+
+
 // ── HELPERS ───────────────────────────────────────────────────
 const fmt = (n, d = 2) => Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtPct = (n) => `${Number(n) >= 0 ? "+" : ""}${fmt(n, 2)}%`;
@@ -154,6 +157,7 @@ export default function App() {
   const [modelMeta, setModelMeta] = useState([]);
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
+  const [prices, setPrices] = useState({});  // live per-second prices from price_ticks
   const [countdown, setCountdown] = useState(60);
   const [activeTab, setActiveTab] = useState("chart");
   const [training, setTraining] = useState(false);
@@ -202,7 +206,7 @@ export default function App() {
 
     ws.onopen = () => {
       setConnected(true);
-      const tables = ["candles", "signals", "trades", "positions", "bots"];
+      const tables = ["candles", "signals", "trades", "positions", "bots", "price_ticks"];
       tables.forEach(table => {
         ws.send(JSON.stringify({
           topic: `realtime:public:${table}`, event: "phx_join",
@@ -228,6 +232,9 @@ export default function App() {
         if (table === "trades" && type === "INSERT") setTrades(prev => [record, ...prev].slice(0, 100));
         if (table === "bots" && type === "UPDATE") setBot(record);
         if (table === "positions") loadData();
+        if (table === "price_ticks" && type === "INSERT") {
+          setPrices(prev => ({ ...prev, [record.symbol]: parseFloat(record.price) }));
+        }
       } catch {}
     };
 
@@ -244,6 +251,13 @@ export default function App() {
     }
     return () => clearInterval(countdownRef.current);
   }, [bot?.status]);
+
+  // ── Polling fallback — refresh full data every 15s ───────
+  // Catches any updates missed by the WebSocket
+  useEffect(() => {
+    const poll = setInterval(() => loadData(), 15000);
+    return () => clearInterval(poll);
+  }, [loadData]);
 
   // ── Actions ──────────────────────────────────────────────
   const toggleBot = async () => {
